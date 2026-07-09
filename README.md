@@ -14,7 +14,7 @@ or `asar` packaging step to trip over.
 npm install sublimekeys
 ```
 
-Requires Node.js 18+ (any current Electron release ships a much newer Node
+Requires Node.js 20+ (any current Electron release ships a much newer Node
 than that).
 
 ## Quickstart
