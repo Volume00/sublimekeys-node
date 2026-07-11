@@ -12,9 +12,9 @@ import { NetworkError, LeaseError } from "./errors.js";
 import { DEFAULT_BASE_URL, HttpClient } from "./http.js";
 import { verifyLease } from "./lease.js";
 import { getOrCreateMachineId } from "./machine.js";
-import { loadLease, saveLease, clearLease } from "./storage.js";
+import { loadLease, saveLease, clearLease, loadTrial, saveTrial } from "./storage.js";
 
-export type LicenseSource = "online" | "offline_cache" | "offline_cache_miss";
+export type LicenseSource = "online" | "offline_cache" | "offline_cache_miss" | "network_error";
 
 export interface LicenseResult {
   valid: boolean;
@@ -24,11 +24,14 @@ export interface LicenseResult {
   source: LicenseSource;
 }
 
+export type TrialSource = "online" | "offline_cache" | "network_error";
+
 export interface TrialResult {
-  status: "active" | "expired" | "none";
+  status: "active" | "expired" | "none" | "network_error";
   daysLeft: number;
   expiresAt?: string | null;
   message: string;
+  source: TrialSource;
 }
 
 export interface SublimeKeysClientOptions {
@@ -78,7 +81,7 @@ export class SublimeKeysClient {
       });
     } catch (err) {
       const reason = err instanceof NetworkError ? err.message : String(err);
-      return { valid: false, message: `Network error: ${reason}`, source: "online" };
+      return { valid: false, message: `Network error: ${reason}`, source: "network_error" };
     }
 
     const result: LicenseResult = {
@@ -169,7 +172,7 @@ export class SublimeKeysClient {
       });
     } catch (err) {
       const reason = err instanceof NetworkError ? err.message : String(err);
-      return { valid: false, message: `Network error: ${reason}`, source: "online" };
+      return { valid: false, message: `Network error: ${reason}`, source: "network_error" };
     }
 
     clearLease(this.productId, this.cacheBase);
@@ -182,7 +185,11 @@ export class SublimeKeysClient {
     return this.trialCall("/trial/start", machineId);
   }
 
-  /** Read-only trial check — never starts one. */
+  /** Read-only trial check — never starts one. Offline-tolerant: if the
+   * network call fails, falls back to the last server-confirmed trial
+   * snapshot (source="offline_cache") instead of just failing — the
+   * snapshot is never locally recomputed, so an offline user can't extend
+   * a trial by manipulating their system clock. */
   async trialStatus(machineId?: string): Promise<TrialResult> {
     return this.trialCall("/trial/status", machineId);
   }
@@ -196,14 +203,31 @@ export class SublimeKeysClient {
         product_id: this.productId,
       });
     } catch (err) {
+      const cached = loadTrial(this.productId, this.cacheBase);
+      if (cached) {
+        return {
+          status: cached.status as TrialResult["status"],
+          daysLeft: cached.days_left,
+          expiresAt: cached.expires_at,
+          message: cached.message,
+          source: "offline_cache",
+        };
+      }
       const reason = err instanceof NetworkError ? err.message : String(err);
-      return { status: "none", daysLeft: 0, message: `Network error: ${reason}` };
+      return { status: "network_error", daysLeft: 0, message: `Network error: ${reason}`, source: "network_error" };
     }
-    return {
+
+    const result: TrialResult = {
       status: data.status as TrialResult["status"],
       daysLeft: (data.days_left as number) ?? 0,
       expiresAt: (data.expires_at as string) ?? null,
       message: (data.message as string) ?? "",
+      source: "online",
     };
+    saveTrial(this.productId, {
+      status: result.status, days_left: result.daysLeft,
+      expires_at: result.expiresAt ?? null, message: result.message,
+    }, this.cacheBase);
+    return result;
   }
 }

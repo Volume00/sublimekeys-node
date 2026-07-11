@@ -57,6 +57,16 @@ if (trial.status === "active") console.log(`${trial.daysLeft} days left`);
 const status = await client.trialStatus(); // read-only check, never starts one
 ```
 
+Trial state lives server-side, keyed to `machineId` — the server's clock
+decides `daysLeft`, never the client's, so rolling back a machine's system
+clock doesn't extend a trial. `trialStatus()` still works offline: if the
+network call fails, it replays the last server-confirmed snapshot
+(`source: "offline_cache"`) instead of just failing — but that snapshot is
+never locally recomputed or decremented, so it can go stale (frozen at its
+last known value) rather than silently trusting the local clock. Falls back
+to `source: "network_error"` only if there's no cached snapshot yet either
+(e.g. the very first check happens offline).
+
 ## How offline verification works
 
 When `activate()` or `verify()` succeeds, the server returns a lease — a small
@@ -86,6 +96,17 @@ All methods return a plain object (`LicenseResult` or `TrialResult`) — they
 never throw for a normal "not valid" outcome. Network failures are caught
 internally too; `verify()` falls back to the offline cache or a
 `{ valid: false, source: "offline_cache_miss" }` result rather than throwing.
+
+**Don't treat every `valid: false` as "bad license".** A network failure on
+`activate()` or `deactivate()` (offline on first run, DNS hiccup, etc.) still
+returns a normal object rather than throwing — check
+`source === "network_error"` to show "no connection, try again" instead of
+"invalid license". `verify()` and the trial methods don't need this check on
+their own: they already try their local cache first, so a network failure
+there only surfaces as `source === "offline_cache_miss"` (`verify()`) or
+`source === "network_error"` with no `"offline_cache"` fallback available
+(trials, first-ever offline check only) once there's truly nothing usable,
+cached or online.
 
 ## Using this in an Electron app
 

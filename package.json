@@ -1,6 +1,6 @@
 {
   "name": "sublimekeys",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Official Node.js/Electron SDK for SublimeKeys — license activation, verification, and offline signed-lease checks with zero runtime dependencies.",
   "type": "module",
   "main": "./dist/index.cjs",

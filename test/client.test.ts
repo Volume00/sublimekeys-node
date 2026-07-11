@@ -153,4 +153,61 @@ describe("SublimeKeysClient", () => {
 
     expect(existsSync(join(cacheDir, "lease.json"))).toBe(false);
   });
+
+  it("reports network_error, not online, when activate can't reach the server", async () => {
+    const client = makeClient();
+    transport.goOffline();
+
+    const result = await client.activate("LIC-1");
+
+    expect(result.valid).toBe(false);
+    expect(result.source).toBe("network_error");
+  });
+
+  it("reports network_error, not online, when deactivate can't reach the server", async () => {
+    const client = makeClient();
+    transport.goOffline();
+
+    const result = await client.deactivate("LIC-1");
+
+    expect(result.valid).toBe(false);
+    expect(result.source).toBe("network_error");
+  });
+
+  it("reports network_error on a trial check with no cached snapshot yet", async () => {
+    const client = makeClient();
+    transport.goOffline();
+
+    const result = await client.trialStatus();
+
+    expect(result.status).toBe("network_error");
+    expect(result.source).toBe("network_error");
+  });
+
+  it("falls back to the cached trial snapshot when offline", async () => {
+    const client = makeClient();
+    transport.queueResponse({ status: "active", days_left: 5, expires_at: null, message: "Trial active" });
+    const online = await client.trialStatus();
+    expect(online.source).toBe("online");
+
+    transport.goOffline();
+    const result = await client.trialStatus();
+
+    expect(result.status).toBe("active");
+    expect(result.daysLeft).toBe(5);
+    expect(result.source).toBe("offline_cache");
+  });
+
+  it("never locally recomputes the cached trial snapshot", async () => {
+    const client = makeClient();
+    transport.queueResponse({ status: "active", days_left: 5, expires_at: null, message: "Trial active" });
+    await client.trialStatus();
+
+    transport.goOffline();
+    const first = await client.trialStatus();
+    const second = await client.trialStatus();
+
+    expect(first.daysLeft).toBe(5);
+    expect(second.daysLeft).toBe(5);
+  });
 });
