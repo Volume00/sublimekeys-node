@@ -3,6 +3,7 @@ name: publish
 on:
   release:
     types: [published]
+  workflow_dispatch:  # manual re-trigger without needing to delete/recreate a release
 
 jobs:
   publish:
@@ -17,6 +18,10 @@ jobs:
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
+      - run: npm install -g npm@latest  # npm's OIDC trusted-publish PUT needs a recent CLI; the
+                                         # Sigstore provenance step can succeed on an older one
+                                         # while the actual registry auth still fails (this bug)
+      - run: npm --version
       - run: npm install
       - run: npm run typecheck
       - run: npm test
