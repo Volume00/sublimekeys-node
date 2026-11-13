@@ -51,6 +51,26 @@ describe("verifyLease", () => {
     expect(() => verifyLease(token, pubBytes, EXPECTED)).toThrow(/expired/);
   });
 
+  it("accepts a future date-only expiry", () => {
+    const { privateKey, pubBytes } = makeKeypair();
+    const token = makeLease(privateKey, { licenseExpiresAt: "2099-01-01" });
+    expect(verifyLease(token, pubBytes, EXPECTED).license_expires_at).toBe("2099-01-01");
+  });
+
+  it("rejects a past date-only expiry", () => {
+    const { privateKey, pubBytes } = makeKeypair();
+    const token = makeLease(privateKey, { licenseExpiresAt: "2000-01-01" });
+    expect(() => verifyLease(token, pubBytes, EXPECTED)).toThrow(/expired/);
+  });
+
+  it("fails closed on an unparseable license expiry (never treats it as 'no expiry')", () => {
+    // new Date("next year") is an Invalid Date, and `now >= InvalidDate` is
+    // false — so without an explicit check the license would look non-expiring.
+    const { privateKey, pubBytes } = makeKeypair();
+    const token = makeLease(privateKey, { licenseExpiresAt: "next year" });
+    expect(() => verifyLease(token, pubBytes, EXPECTED)).toThrow(/malformed/);
+  });
+
   it.each([
     ["expectedLicenseKey", "WRONG-KEY"],
     ["expectedMachineId", "wrong-machine"],

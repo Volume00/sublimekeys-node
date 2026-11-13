@@ -91,13 +91,25 @@ export function verifyLease(token: string, publicKeyBytes: Buffer, opts: VerifyL
 
   const now = opts.now ?? new Date();
 
-  if (!payload.lease_expires_at || now >= new Date(payload.lease_expires_at)) {
+  if (!payload.lease_expires_at || now >= parseLeaseDate(payload.lease_expires_at, "lease_expires_at")) {
     throw new LeaseError("lease trust window has lapsed");
   }
 
-  if (payload.license_expires_at && now >= new Date(payload.license_expires_at)) {
+  if (payload.license_expires_at && now >= parseLeaseDate(payload.license_expires_at, "license_expires_at")) {
     throw new LeaseError("license has expired");
   }
 
   return payload;
+}
+
+/** `new Date("garbage")` is an Invalid Date and `now >= InvalidDate` is false,
+ *  so an unparseable expiry would silently read as "not expired". Fail closed
+ *  instead: verify() treats a LeaseError as "ask the server". A date-only value
+ *  such as "2027-11-13" parses as UTC midnight, which is fine. */
+function parseLeaseDate(value: string, field: string): Date {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) {
+    throw new LeaseError(`malformed ${field} in lease`);
+  }
+  return d;
 }
